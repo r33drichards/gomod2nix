@@ -19,4 +19,4 @@ build:
     - nix-build
   artifacts:
     paths:
-      - myapp
+      - result/bin/myapp
