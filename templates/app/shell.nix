@@ -18,5 +18,14 @@ pkgs.mkShell {
   packages = [
     goEnv
     pkgs.gomod2nix
+    gopls
+    tmux
+    gofumpt
+    olderVersionOfGolangci-lint
+    gosec
+    delve
+    go-tools
+    gotests
+    gomodifytags
   ];
 }
