@@ -1,0 +1,22 @@
+stages:
+  - test
+  - build
+
+test:
+  stage: test
+  image: nixos/nix
+  needs: []
+  script:
+    - nix-shell --run "go fmt $(go list ./... | grep -v /vendor/)"
+    - nix-shell --run "go vet -composites=false $(go list ./... | grep -v /vendor/)"
+    - nix-shell --run "go test --race $(go list ./... | grep -v /vendor/)"
+
+build:
+  stage: build
+  image: nixos/nix
+  needs: []
+  scripot:
+    - nix-build
+  artifacts:
+    paths:
+      - myapp
