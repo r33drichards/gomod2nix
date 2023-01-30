@@ -37,7 +37,7 @@ provider "aws" {
 }
 
 # s3 bucket 
-resource "aws_s3_bucket" "streaker" {
+resource "aws_s3_bucket" "myapp" {
   acl = "public-read"
   bucket = var.bucket_name
 }
