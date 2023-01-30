@@ -17,5 +17,6 @@ pkgs.mkShell {
     pkgs.golangci-lint
     pkgs.gomod2nix
     (pkgs.mkGoEnv { pwd = ./.; })
+    pkgs.terraform
   ];
 }
