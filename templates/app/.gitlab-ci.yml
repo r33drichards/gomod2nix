@@ -1,22 +1,121 @@
 stages:
   - test
-  - build
+  - init
+  - prepare
+  - validate
+  - plan
+  - deploy
+
+
+variables:
+  TF_ROOT: ${CI_PROJECT_DIR}
+  TF_ADDRESS: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${CI_PROJECT_NAME}
+  TF_VAR_COMMIT_SHA: $CI_COMMIT_SHORT_SHA
+
 
 test:
-  stage: test
   image: nixos/nix
-  needs: []
+  before_script:
+  # todo prob can combine these steps
+    - nix-env --install --attr nixpkgs.cachix
+    - cachix use "$CACHIX_CACHE_NAME"
   script:
-    - nix-shell --run "go fmt $(go list ./... | grep -v /vendor/)"
-    - nix-shell --run "go vet -composites=false $(go list ./... | grep -v /vendor/)"
-    - nix-shell --run "go test --race $(go list ./... | grep -v /vendor/)"
+    - nix develop --profile runner-profile --extra-experimental-features nix-command --extra-experimental-features flakes --command bash -c "go fmt $(go list ./... | grep -v /vendor/)"
+    - nix develop --profile runner-profile --extra-experimental-features nix-command --extra-experimental-features flakes --command bash -c "go vet -composites=false $(go list ./... | grep -v /vendor/)"
+    - nix develop --profile runner-profile --extra-experimental-features nix-command --extra-experimental-features flakes --command bash -c "go test --race $(go list ./... | grep -v /vendor/)"
+    - cachix push $CACHIX_CACHE_NAME runner-profile
 
 build:
-  stage: build
   image: nixos/nix
+  before_script:
+  # todo prob can combine these steps
+    - nix-env --install --attr nixpkgs.cachix
+    - cachix use "$CACHIX_CACHE_NAME"
+    # install jq
+    - nix-env -iA nixpkgs.jq 
+  script:
+    - nix --extra-experimental-features nix-command --extra-experimental-features flakes build --json | jq -r '.[].outputs | to_entries[].value' | cachix push $CACHIX_CACHE_NAME
+
+bundle:
+  image: nixos/nix
+  before_script:
+  # todo prob can combine these steps
+    - nix-env --install --attr nixpkgs.cachix
+    - cachix use "$CACHIX_CACHE_NAME"
+    # install aws cli
+    - nix-env -iA nixpkgs.awscli
+  script:
+    - nix --extra-experimental-features nix-command --extra-experimental-features flakes bundle
+    - aws s3 cp myapp s3://streaker.jjk.is/myapp --acl public-read
+
+archive:
+  image: nixos/nix
+  before_script:
+  # todo prob can combine these steps
+    - nix-env --install --attr nixpkgs.cachix
+    - cachix use "$CACHIX_CACHE_NAME"
+    # install jq
+    - nix-env -iA nixpkgs.jq 
+  script:
+    - nix --extra-experimental-features nix-command --extra-experimental-features flakes flake archive --json | jq -r '.path,(.inputs|to_entries[].value.path)' | cachix push $CACHIX_CACHE_NAME
+
+run:
+  image: nixos/nix
+  before_script:
+  # todo prob can combine these steps
+    - nix-env --install --attr nixpkgs.cachix
+    - cachix use "$CACHIX_CACHE_NAME"
+    # install myapp
+    - nix-env -iA nixpkgs.myapp
+  script:
+    - myapp
+
+
+init:
+  image: registry.gitlab.com/gitlab-org/terraform-images/releases/1.0
+  stage: prepare
   needs: []
-  scripot:
-    - nix-build
+  script:
+    - cd ${TF_ROOT}
+    - gitlab-terraform init
+
+validate:
+  image: registry.gitlab.com/gitlab-org/terraform-images/releases/1.0
+  stage: validate
+  needs:
+    - init
+  script:
+    - cd ${TF_ROOT}
+    - gitlab-terraform validate
+
+plan:
+  image: registry.gitlab.com/gitlab-org/terraform-images/releases/1.0
+  stage: plan
+  needs:
+    - validate
+  script:
+    - cd ${TF_ROOT}
+    - gitlab-terraform plan
+    - gitlab-terraform plan-json
   artifacts:
+    name: plan
     paths:
-      - result/bin/myapp
+      - ${TF_ROOT}/plan.cache
+    reports:
+      terraform: ${TF_ROOT}/plan.json
+
+apply:
+  image: registry.gitlab.com/gitlab-org/terraform-images/releases/1.0
+  stage: deploy
+  needs:
+    - plan
+  environment:
+    name: production
+  script:
+    - cd ${TF_ROOT}
+    - gitlab-terraform apply
+  dependencies:
+    - plan
+  only:
+    - main
+

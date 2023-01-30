@@ -26,5 +26,7 @@ pkgs.mkShell {
     pkgs.go-tools
     pkgs.gotests
     pkgs.gomodifytags
+    pkgs.terraform
+    pkgs.just
   ];
 }
