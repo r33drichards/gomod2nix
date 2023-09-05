@@ -12,63 +12,39 @@ variables:
   TF_ADDRESS: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${CI_PROJECT_NAME}
   TF_VAR_COMMIT_SHA: $CI_COMMIT_SHORT_SHA
 
-
-test:
-  image: nixos/nix
-  before_script:
-  # todo prob can combine these steps
-    - nix-env --install --attr nixpkgs.cachix
-    - cachix use "$CACHIX_CACHE_NAME"
-  script:
-    - nix develop --profile runner-profile --extra-experimental-features nix-command --extra-experimental-features flakes --command bash -c "go fmt $(go list ./... | grep -v /vendor/)"
-    - nix develop --profile runner-profile --extra-experimental-features nix-command --extra-experimental-features flakes --command bash -c "go vet -composites=false $(go list ./... | grep -v /vendor/)"
-    - nix develop --profile runner-profile --extra-experimental-features nix-command --extra-experimental-features flakes --command bash -c "go test --race $(go list ./... | grep -v /vendor/)"
-    - cachix push $CACHIX_CACHE_NAME runner-profile
-
 build:
+  needs: []
+  stage: build
   image: nixos/nix
-  before_script:
-  # todo prob can combine these steps
-    - nix-env --install --attr nixpkgs.cachix
-    - cachix use "$CACHIX_CACHE_NAME"
-    # install jq
-    - nix-env -iA nixpkgs.jq 
   script:
-    - nix --extra-experimental-features nix-command --extra-experimental-features flakes build --json | jq -r '.[].outputs | to_entries[].value' | cachix push $CACHIX_CACHE_NAME
+    - nix build --extra-experimental-features flakes --extra-experimental-features nix-command .#dockerImage
+    - cp $(readlink result) result.tar.gz
+  artifacts:
+    paths:
+      - result.tar.gz
+    expire_in: 1 week
+  cache:
+    paths:
+      - /nix/store
 
-bundle:
-  image: nixos/nix
-  before_script:
-  # todo prob can combine these steps
-    - nix-env --install --attr nixpkgs.cachix
-    - cachix use "$CACHIX_CACHE_NAME"
-    # install aws cli
-    - nix-env -iA nixpkgs.awscli
+deploy-ecr:
+  needs: [build]
+  dependencies:
+    - build
+  stage: build
+  image: docker:19.03.12
   script:
-    - nix --extra-experimental-features nix-command --extra-experimental-features flakes bundle
-    - aws s3 cp myapp s3://streaker.jjk.is/myapp --acl public-read
-
-archive:
-  image: nixos/nix
-  before_script:
-  # todo prob can combine these steps
-    - nix-env --install --attr nixpkgs.cachix
-    - cachix use "$CACHIX_CACHE_NAME"
-    # install jq
-    - nix-env -iA nixpkgs.jq 
-  script:
-    - nix --extra-experimental-features nix-command --extra-experimental-features flakes flake archive --json | jq -r '.path,(.inputs|to_entries[].value.path)' | cachix push $CACHIX_CACHE_NAME
-
-run:
-  image: nixos/nix
-  before_script:
-  # todo prob can combine these steps
-    - nix-env --install --attr nixpkgs.cachix
-    - cachix use "$CACHIX_CACHE_NAME"
-    # install myapp
-    - nix-env -iA nixpkgs.myapp
-  script:
-    - myapp
+    - docker load < result.tar.gz
+    - docker tag myapp:latest $IMAGE_TAG
+    - apk update && apk add --no-cache curl jq python3 py3-pip
+    - pip install awscli
+    - eval $(aws ecr get-login --no-include-email --region us-east-1)
+    - docker push $IMAGE_TAG
+    - echo $CI_COMMIT_SHORT_SHA
+    - echo $IMAGE_TAG
+  only:
+    - master
+ 
 
 
 init:

@@ -14,9 +14,18 @@
             overlays = [ gomod2nix.overlays.default ];
           };
 
+          dockerImage = pkgs.dockerTools.buildLayeredImage {
+            name = "myapp";
+            tag = "latest";
+            config.Cmd = [ "${app}/bin/myapp" ];
+            config.Env = [ "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt" ];
+            contents = [ pkgs.cacert ];
+          };
+
         in
         {
           packages.default = pkgs.callPackage ./. { };
+          packages.dockerImage = dockerImage;
           devShells.default = import ./shell.nix { inherit pkgs; };
         })
     );
