@@ -13,7 +13,7 @@
             inherit system;
             overlays = [ gomod2nix.overlays.default ];
           };
-
+          app = pkgs.callPackage ./. { };
           dockerImage = pkgs.dockerTools.buildLayeredImage {
             name = "myapp";
             tag = "latest";
@@ -24,7 +24,7 @@
 
         in
         {
-          packages.default = pkgs.callPackage ./. { };
+          packages.default = app;
           packages.dockerImage = dockerImage;
           devShells.default = import ./shell.nix { inherit pkgs; };
         })
