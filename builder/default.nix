@@ -6,8 +6,8 @@
 , fetchgit
 , jq
 , cacert
-, pkgs
 , pkgsBuildBuild
+, buildPackages
 , runtimeShell
 , writeScript
 , gomod2nix
@@ -127,20 +127,20 @@ let
       );
 
   # Return a Go attribute and error out if the Go version is older than was specified in go.mod.
-  selectGo = attrs: goMod: attrs.go or (if goMod == null then pkgs.go else
+  selectGo = attrs: goMod: attrs.go or (if goMod == null then buildPackages.go else
   (
     let
       goVersion = goMod.go;
       goAttrs = lib.reverseList (builtins.filter
         (
-          attr: lib.hasPrefix "go_" attr && lib.versionAtLeast pkgs.${attr}.version goVersion
+          attr: lib.hasPrefix "go_" attr && lib.versionAtLeast buildPackages.${attr}.version goVersion
         )
-        (lib.attrNames pkgs));
+        (lib.attrNames buildPackages));
       goAttr = elemAt goAttrs 0;
     in
     (
       if goAttrs != [ ]
-      then pkgs.${goAttr}
+      then buildPackages.${goAttr}
       else throw "go.mod specified Go version ${goVersion}, but no compatible Go attribute could be found."
     )
   ));
@@ -161,10 +161,12 @@ let
 
   mkGoEnv =
     { pwd
+    , toolsGo ? pwd + "/tools.go"
+    , modules ? pwd + "/gomod2nix.toml"
     }@attrs:
     let
       goMod = parseGoMod (readFile "${toString pwd}/go.mod");
-      modulesStruct = fromTOML (readFile "${toString pwd}/gomod2nix.toml");
+      modulesStruct = fromTOML (readFile modules);
 
       go = selectGo attrs goMod;
 
@@ -201,11 +203,11 @@ let
         export GOSUMDB=off
         export GOPROXY=off
 
-      '' + optionalString (pathExists (pwd + "/tools.go")) ''
+      '' + optionalString (pathExists toolsGo) ''
         mkdir source
         cp ${pwd + "/go.mod"} source/go.mod
         cp ${pwd + "/go.sum"} source/go.sum
-        cp ${pwd + "/tools.go"} source/tools.go
+        cp ${toolsGo} source/tools.go
         cd source
 
         rsync -a -K --ignore-errors ${vendorEnv}/ vendor
@@ -430,7 +432,7 @@ let
 
         } // passthru;
 
-        meta = { platforms = go.meta.platforms or platforms.all; } // meta;
+        inherit meta;
       });
 
 in
